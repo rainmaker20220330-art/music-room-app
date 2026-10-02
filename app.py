@@ -1,28 +1,34 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
+import requests
 
-# 予約データを保存するファイル名
-DATA_FILE = "reservations.json"
+# ★ステップ1で取得したウェブアプリのURLをここに貼り付けます
+GAS_URL = "https://script.google.com/macros/s/AKfycbzdkNSII2kmRSrhFoekyrL-_zuc7Ed8DhnrTqpJvCDN3TNSWMIwHukAeGuxPgrNkp6L/exec"
 
-# データ読み込み関数
+# スプレッドシートからデータ取得
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    try:
+        response = requests.get(GAS_URL)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return []
+    except Exception as e:
+        st.error("データの読み込みに失敗しました。")
+        return []
 
-# データ保存関数
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+# スプレッドシートへ保存
+def save_data(new_reservation):
+    try:
+        response = requests.post(GAS_URL, json=new_reservation)
+        return response.status_code == 200
+    except Exception as e:
+        st.error("データの保存に失敗しました。")
+        return False
 
-# タイトル表示
 st.title("🎸 延岡工業高校 軽音楽同好会")
 st.subheader("音楽室 練習予約システム")
 
-# 予約データの読み込み
 reservations = load_data()
 
 # --- 予約フォーム ---
@@ -49,30 +55,35 @@ if submitted:
         st.error("⚠️ バンド名を入力してください。")
     else:
         date_str = str(date)
-        # 同じ日・同じ時間枠の重複チェック
+        # 重複チェック
         is_duplicate = any(r["date"] == date_str and r["time_slot"] == time_slot for r in reservations)
         
         if is_duplicate:
             st.error("⚠️ 指定された時間枠はすでに予約されています。別の枠を選んでください。")
         else:
-            reservations.append({
+            new_data = {
                 "date": date_str,
                 "time_slot": time_slot,
                 "band_name": band_name
-            })
-            save_data(reservations)
-            st.success("✅ 予約が完了しました！")
-            st.rerun()
+            }
+            if save_data(new_data):
+                st.success("✅ 予約が完了しました！")
+                st.rerun()
+            else:
+                st.error("❌ 予約の保存に失敗しました。もう一度お試しください。")
 
-# --- 予約一覧表示 ---
+# --- 予約状況表示 ---
 st.markdown("---")
 st.header("📅 現在の予約状況")
 
 if reservations:
     df = pd.DataFrame(reservations)
-    df.columns = ["日付", "時間枠", "バンド名"]
-    # 日付順に並び替え
-    df = df.sort_values(by="日付")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    if not df.empty and "date" in df.columns:
+        df = df[["date", "time_slot", "band_name"]]
+        df.columns = ["日付", "時間枠", "バンド名"]
+        df = df.sort_values(by="日付")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("現在、予約はありません。")
 else:
     st.info("現在、予約はありません。")
