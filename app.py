@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 import requests
 import re
+from datetime import date
 from dateutil import parser
 
 # ★ご自身のGASウェブアプリのURLを貼り付けてください
 GAS_URL = "https://script.google.com/macros/s/AKfycbzdkNSII2kmRSrhFoekyrL-_zuc7Ed8DhnrTqpJvCDN3TNSWMIwHukAeGuxPgrNkp6L/exec"
 
-# スプレッドシートからデータ取得＆どんな表記の日付も「YYYY-MM-DD」に確定変換する
+# スプレッドシートからデータ取得＆日付形式を「YYYY-MM-DD」に強制変換
 def load_data():
     try:
         response = requests.get(GAS_URL)
@@ -20,11 +21,11 @@ def load_data():
                 if not date_val:
                     continue
                 
-                # 1. カッコとその中身（例: (Japan Standard Time)）を除去
+                # 1. カッコとその中身を除去
                 val_str = str(date_val).strip()
                 cleaned_str = re.sub(r'\(.*?\)', '', val_str).strip()
                 
-                # 2. どんな形式（英語/斜線区切りなど）でも YYYY-MM-DD に強制変換
+                # 2. どんな形式でも YYYY-MM-DD に強制変換
                 try:
                     dt = parser.parse(cleaned_str)
                     formatted_date = dt.strftime("%Y-%m-%d")
@@ -62,7 +63,7 @@ st.markdown("---")
 st.header("📝 新規予約")
 
 with st.form("booking_form", clear_on_submit=True):
-    date = st.date_input("予約日")
+    selected_date = st.date_input("予約日")
     time_slot = st.selectbox(
         "時間枠",
         [
@@ -77,20 +78,37 @@ with st.form("booking_form", clear_on_submit=True):
     submitted = st.form_submit_button("予約を確定する")
 
 if submitted:
-    if not band_name.strip():
+    input_band = band_name.strip()
+    
+    if not input_band:
         st.error("⚠️ バンド名を入力してください。")
     else:
-        date_str = str(date)
-        # 重複チェック（統一された YYYY-MM-DD の形式で比較）
-        is_duplicate = any(r["date"] == date_str and r["time_slot"] == time_slot for r in reservations)
+        date_str = str(selected_date)
+        today_str = str(date.today())
         
-        if is_duplicate:
-            st.error("⚠️ 指定された時間枠はすでに予約されています。別の枠を選んでください。")
+        # 1. 時間枠の重複チェック（すでにその日のその枠が埋まっているか）
+        is_slot_taken = any(
+            r["date"] == date_str and r["time_slot"] == time_slot 
+            for r in reservations
+        )
+        
+        # 2. 未消化の予約チェック（今日以降にまだ終わっていない予約が1つでもあるか）
+        active_reservations = [
+            r for r in reservations
+            if r["date"] >= today_str and r["band_name"].lower().replace(" ", "") == input_band.lower().replace(" ", "")
+        ]
+        
+        if is_slot_taken:
+            st.error("⚠️ 指定された時間枠はすでに別のバンドが予約しています。")
+        elif active_reservations:
+            # 既存の未消化予約の日時を取得して親切に通知
+            next_booking = active_reservations[0]
+            st.error(f"⚠️ 「{input_band}」にはまだ終了していない予約（{next_booking['date']} {next_booking['time_slot']}）があります。この練習が終わるまで次の予約はできません！")
         else:
             new_data = {
                 "date": date_str,
                 "time_slot": time_slot,
-                "band_name": band_name
+                "band_name": input_band
             }
             if save_data(new_data):
                 st.success("✅ 予約が完了しました！")
