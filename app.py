@@ -2,15 +2,34 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# ★ステップ1で取得したウェブアプリのURLをここに貼り付けます
+# ★ご自身のGASウェブアプリのURLを貼り付けてください
 GAS_URL = "https://script.google.com/macros/s/AKfycbzdkNSII2kmRSrhFoekyrL-_zuc7Ed8DhnrTqpJvCDN3TNSWMIwHukAeGuxPgrNkp6L/exec"
 
-# スプレッドシートからデータ取得
+# スプレッドシートからデータ取得＆日付の形式を自動補正
 def load_data():
     try:
         response = requests.get(GAS_URL)
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            cleaned_data = []
+            
+            for r in data:
+                date_val = r.get("date")
+                if not date_val:
+                    continue
+                
+                # どんな形式の日付が来ても「YYYY-MM-DD」に自動変換・統一する
+                try:
+                    formatted_date = pd.to_datetime(date_val).strftime("%Y-%m-%d")
+                except:
+                    formatted_date = str(date_val).strip()
+
+                cleaned_data.append({
+                    "date": formatted_date,
+                    "time_slot": str(r.get("time_slot", "")).strip(),
+                    "band_name": str(r.get("band_name", "")).strip()
+                })
+            return cleaned_data
         else:
             return []
     except Exception as e:
@@ -55,7 +74,7 @@ if submitted:
         st.error("⚠️ バンド名を入力してください。")
     else:
         date_str = str(date)
-        # 重複チェック
+        # 重複チェック（統一した形式でチェック）
         is_duplicate = any(r["date"] == date_str and r["time_slot"] == time_slot for r in reservations)
         
         if is_duplicate:
