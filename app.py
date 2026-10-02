@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
 import requests
+import re
+from dateutil import parser
 
 # ★ご自身のGASウェブアプリのURLを貼り付けてください
 GAS_URL = "https://script.google.com/macros/s/AKfycbzdkNSII2kmRSrhFoekyrL-_zuc7Ed8DhnrTqpJvCDN3TNSWMIwHukAeGuxPgrNkp6L/exec"
 
-# スプレッドシートからデータ取得＆日付の形式を自動補正
+# スプレッドシートからデータ取得＆どんな表記の日付も「YYYY-MM-DD」に確定変換する
 def load_data():
     try:
         response = requests.get(GAS_URL)
@@ -18,11 +20,16 @@ def load_data():
                 if not date_val:
                     continue
                 
-                # どんな形式の日付が来ても「YYYY-MM-DD」に自動変換・統一する
+                # 1. カッコとその中身（例: (Japan Standard Time)）を除去
+                val_str = str(date_val).strip()
+                cleaned_str = re.sub(r'\(.*?\)', '', val_str).strip()
+                
+                # 2. どんな形式（英語/斜線区切りなど）でも YYYY-MM-DD に強制変換
                 try:
-                    formatted_date = pd.to_datetime(date_val).strftime("%Y-%m-%d")
+                    dt = parser.parse(cleaned_str)
+                    formatted_date = dt.strftime("%Y-%m-%d")
                 except:
-                    formatted_date = str(date_val).strip()
+                    formatted_date = cleaned_str
 
                 cleaned_data.append({
                     "date": formatted_date,
@@ -74,7 +81,7 @@ if submitted:
         st.error("⚠️ バンド名を入力してください。")
     else:
         date_str = str(date)
-        # 重複チェック（統一した形式でチェック）
+        # 重複チェック（統一された YYYY-MM-DD の形式で比較）
         is_duplicate = any(r["date"] == date_str and r["time_slot"] == time_slot for r in reservations)
         
         if is_duplicate:
